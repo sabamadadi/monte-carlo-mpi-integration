@@ -30,17 +30,15 @@ $$\hat{u}(x) = x \cdot \frac{1}{N} \sum_{i=1}^{N} \sin(x \cdot R_i)$$
 
 ```text
 .
-├── src/
-│   └── mc_integral_mpi.c       # C source code with MPI routines
-├── scripts/
-│   ├── run_experiments.sh      # Automated test execution script
-│   └── plot_results.py         # Matplotlib visualization script
-├── figures/                    # Benchmark plots displayed in README
+├── mc_integral_mpi.c       # C source code with MPI routines
+├── plot_results.py         # Python script to calculate metrics & generate plots
+├── results.csv             # Raw benchmark data
+├── results_with_metrics.csv# Calculated speedup & efficiency metrics
+├── figures/                # Benchmark plots displayed in README
 │   ├── accuracy.png
 │   ├── runtime.png
 │   ├── speedup.png
 │   └── efficiency.png
-├── Makefile                    # Compilation build automation
 └── README.md
 
 ```
@@ -53,15 +51,19 @@ $$\hat{u}(x) = x \cdot \frac{1}{N} \sum_{i=1}^{N} \sin(x \cdot R_i)$$
 
 * C Compiler (`gcc` or `clang`) with C11 support
 * MPI implementation (OpenMPI or MPICH)
+* Python 3 with `pandas` and `matplotlib` (for plotting)
 
 ### Build & Run
 
 ```bash
-# Compile
-make
+# Direct compilation using mpicc
+mpicc -O3 -std=c11 -Wall -Wextra mc_integral_mpi.c -o mc_integral_mpi -lm
 
 # Execute across 4 processes for x = pi/2 and N = 10,000,000
 mpiexec -n 4 ./mc_integral_mpi 1.5707963267948966 10000000 12345
+
+# Process results.csv, generate metrics CSV and plots
+python3 plot_results.py results.csv
 
 ```
 
@@ -82,25 +84,29 @@ All benchmarks were evaluated for $u(\pi/2) = 1.0$ across process counts $P \in 
 
 ### 2. Execution Time & Runtime Scaling ⏱️
 
-* **Analysis:** For computationally intensive workloads ($N = 10^7$), parallel execution provides substantial time savings—dropping total runtime from **0.445s** on a single process ($P=1$) down to **0.049s** across 8 processes ($P=8$).
+* **Analysis:** For computationally intensive workloads ($N = 10^7$), parallel execution provides substantial time savings—dropping total runtime monotonically from single-process baseline down across 8 processes.
 * **Low Workload Threshold:** For small sample sizes ($N \le 10^5$), the execution time flattens out rapidly because the overhead of initializing MPI and sending messages outweighs the compute time.
 
 ---
 
 ### 3. Speedup Analysis $S(N,P)$ 📈
 
-* **Analysis:** Speedup performance improves significantly as the workload per worker increases. At $N = 10^7$, the implementation achieves strong scalability ($S \approx 9.0$ at $P=8$).
-* **Cache Locality Influence:** The observed superlinear scaling behavior at high process counts ($P=8$) stems from reduced working set sizes per rank, allowing local arrays and RNG states to fit entirely within the fast L1/L2 data caches.
+* **Analysis:** Speedup performance improves significantly as the workload per worker increases. At $N = 10^7$, the implementation achieves strong scalability.
+* **Cache Locality Influence:** Superlinear scaling behavior observed at high process counts stems from reduced working set sizes per rank, allowing local arrays and RNG states to fit entirely within the fast L1/L2 data caches.
 
 ---
 
 ### 4. Parallel Efficiency $E(N,P)$ ⚡
 
 * **Analysis:** Efficiency measures core resource utilization ($E = S/P$). For large sample sizes ($N = 10^7$), efficiency remains near or above **100%**, proving high hardware capability utilization.
-* **Communication Latency Impact:** For small sample counts ($N = 10^4$), efficiency drops drastically to below **0.10** at $P=8$ due to communication overhead and Master-Worker synchronization latency dominating the minimal worker compute load.
+* **Communication Latency Impact:** For small sample counts ($N = 10^4$), efficiency drops drastically due to communication overhead and Master-Worker synchronization latency dominating the minimal worker compute load.
 
 ---
 
 ## 📜 License
 
 Distributed under the MIT License. See `LICENSE` for details.
+
+```
+
+```
