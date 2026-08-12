@@ -1,112 +1,161 @@
-# Distributed Monte Carlo Approximation of ODE Definite Integrals via MPI 🚀
+# Distributed Monte Carlo Approximation of ODE Definite Integrals via MPI
 
-A distributed implementation of Monte Carlo integration using C and MPI based on the **Master-Worker architecture** to evaluate definite integrals of ordinary differential equations (ODEs) with numerical precision and parallel profiling.
+[![C](https://img.shields.io/badge/Language-C-blue.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
+[![MPI](https://img.shields.io/badge/Parallel-MPI-green.svg)](https://www.open-mpi.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
 
-## 📌 Abstract
+## Abstract
 
 This project evaluates the distributed approximation of the definite integral representing the solution to the initial value problem:
-$$u'(x) = \sin(x), \quad u(0) = 0 \implies u(x) = \int_{0}^{x} \sin(t) \, dt = 1 - \cos(x)$$
 
-Using a Monte Carlo stochastic sampling approach, the computational workload is partitioned across multiple nodes in a distributed-memory system via MPI. Process 0 (Master) coordinates workload distribution and aggregates partial results, while processes $1 \dots P-1$ (Workers) perform independent sampling. Numerical precision is bolstered using **Kahan compensated summation** to minimize floating-point truncation errors. Empirical benchmarks validate the theoretical stochastic error convergence rate of $\mathcal{O}(N^{-1/2})$ and demonstrate effective strong scaling for large sample sizes ($N = 10^7$).
+$$
+u'(x) = \sin(x), \quad u(0) = 0 \implies u(x) = \int_{0}^{x} \sin(t) \, dt = 1 - \cos(x)
+$$
 
----
+Using a **Monte Carlo** stochastic sampling approach, the computational workload is partitioned across multiple nodes in a distributed-memory system via **MPI**. The implementation leverages the **Master-Worker architecture**. Process 0 (Master) is responsible for determining problem parameters, dividing the total number of samples, sending tasks to Worker processes, receiving local results, and calculating the final approximation. Other processes (Workers) perform independent random sampling and return the local sum of values to the master process.
 
-## 🧮 Method & Parallel Design
+Finally, the accuracy of the method is compared against the exact solution, and the parallel efficiency is analyzed using execution time, **Speedup**, and **Efficiency** metrics.
 
-The Monte Carlo estimator transforms the integral over $R \sim \mathcal{U}(0, 1)$ into an expectation:
-$$\hat{u}(x) = x \cdot \frac{1}{N} \sum_{i=1}^{N} \sin(x \cdot R_i)$$
+## Mathematical Method: Monte Carlo Integration
 
-### 🛠️ Key Implementation Highlights
-* **Master-Worker Model 🤖:** Rank 0 evenly distributes $N$ samples across $P-1$ worker processes, properly handling remainder allocation $r = N \pmod{P-1}$.
-* **Independent RNG 🎲:** Uses **SplitMix64** seeded uniquely per process rank to avoid correlated pseudo-random streams.
-* **Kahan Summation ⚖️:** Prevents catastrophic cancellation during large floating-point additions ($N \ge 10^7$).
-* **Sequential Fallback ⚡:** Runs an optimized single-process execution path when $P=1$ to evaluate true baseline speedup.
+To approximate the integral:
 
----
+$$
+I = \int_{0}^{x} f(t) \, dt
+$$
 
-## 📂 Repository Structure
+we generate a random variable $$R$$ with a uniform distribution on the interval $$(0, 1]$$ and map the random point to $$t = xR$$.
 
-```text
-.
-├── mc_integral_mpi.c         # C source code with MPI routines
-├── plot_results.py           # Python script to calculate metrics & generate plots
-├── results.csv               # Raw benchmark data
-├── results_with_metrics.csv  # Calculated speedup & efficiency metrics
-├── figures/                  # Benchmark plots displayed in README
-│   ├── accuracy.png
-│   ├── runtime.png
-│   ├── speedup.png
-│   └── efficiency.png
-└── README.md
+By change of variables, the integral can be expressed as an expectation:
 
-```
+$$
+\int_{0}^{x} f(t) \, dt = x \mathbb{E}[f(xR)]
+$$
 
----
+In this project, $$f(t) = \sin(t)$$. If $$N$$ independent random samples $$R_1, R_2, \dots, R_N$$ are generated, the Monte Carlo estimator is defined as:
 
-## 🚀 Quick Start
+$$
+\hat{u}(x) = x \times \frac{1}{N} \sum_{i=1}^{N} \sin(xR_i)
+$$
+
+## Parallel Design: Master-Worker Model
+
+The parallelization is performed using **MPI** based on the **Master-Worker pattern**. Let $$P$$ be the total number of MPI processes. Process rank 0 acts as the Master, and the remaining $$W = P - 1$$ processes are Workers.
+
+### Workload Distribution
+The total number of samples $$N$$ is divided as evenly as possible among the $$W$$ Workers. The base number of samples per worker is $$q = \lfloor N/W \rfloor$$, and the remainder $$r = N \bmod W$$ is distributed to the first $$r$$ workers. Therefore, the number of samples for worker $$k$$ is given by:
+
+$$
+N_k = 
+\begin{cases} 
+q + 1 & 1 \le k \le r \\
+q & r < k \le W
+\end{cases}
+$$
+
+This ensures a balanced workload distribution.
+
+## Implementation Details
+
+*   **Language & Library:** The program is written in **C** and utilizes the **MPI** library for inter-process communication.
+*   **Random Number Generator:** To avoid identical pseudo-random sequences on different ranks, the **SplitMix64** generator is used. A unique seed is constructed for each rank based on its rank ID, ensuring independent random streams.
+*   **Numerical Stability:** To reduce floating-point rounding errors during the summation of a large number of terms, the **Kahan summation algorithm** is used within each Worker process.
+*   **Communication:** The Master sends the upper limit $$x$$ and control data (local sample count and seed) to each Worker using distinct MPI tags ($$TAG_X$$ and $$TAG_CONTROL$$). Workers return the local sum and their compute time using $$TAG_RESULT$$.
+*   **Timing:** Execution time is measured using `MPI_Wtime`. The final reported parallel time is the maximum time among all processes (computed via `MPI_Reduce` with `MPI_MAX`), as it determines the overall runtime.
+
+## Quick Start
 
 ### Prerequisites
+*   MPI implementation (e.g., **OpenMPI** or **MPICH**)
+*   C Compiler (`gcc` or `clang`)
+*   Python 3 with `matplotlib` and `pandas` (for generating plots)
 
-* C Compiler (`gcc` or `clang`) with C11 support
-* MPI implementation (OpenMPI or MPICH)
-* Python 3 with `pandas` and `matplotlib` (for plotting)
+### Compilation and Execution
 
-### Build & Run
+Compile the program using the `mpicc` wrapper:
 
 ```bash
-# Direct compilation using mpicc
 mpicc -O3 -std=c11 -Wall -Wextra mc_integral_mpi.c -o mc_integral_mpi -lm
-
-# Execute across 4 processes for x = pi/2 and N = 10,000,000
-mpiexec -n 4 ./mc_integral_mpi 1.5707963267948966 10000000 12345
-
-# Process results.csv, generate metrics CSV and plots
-python3 plot_results.py results.csv
-
 ```
 
----
+Run the program with 4 processes, evaluating at $$x = \pi/2$$ with $$10^7$$ samples and a seed of 12345:
 
-## 📊 Experimental Results & Performance Plots
+```bash
+mpiexec -n 4 ./mc_integral_mpi 1.5707963267948966 10000000 12345
+```
 
-All benchmarks were evaluated for $u(\pi/2) = 1.0$ across process counts $P \in \{1, 2, 4, 8\}$ and sample sizes $N \in \{10^4, 10^5, 10^6, 10^7\}$.
+**Generating Plots:**
+After running experiments (e.g., using the provided `run_experiments.sh` script), generate the analysis plots:
 
----
+```bash
+python3 plot_results.py results.csv
+```
 
-### 1. Numerical Accuracy Convergence 🎯
+The output plot files will be saved as:
+- `accuracy.png`
+- `runtime.png`
+- `speedup.png`
+- `efficiency.png`
 
-* **Analysis:** The integration error follows the theoretical Monte Carlo convergence bound of $\mathcal{O}(N^{-1/2})$. Increasing the total sample size $N$ from $10^4$ to $10^7$ reduces the absolute integration error by approximately two orders of magnitude (from $\sim 10^{-3}$ down to $\sim 3 \times 10^{-5}$).
-* **Stochastic Behavior:** Minor fluctuations between different process counts ($P$) arise due to distinct, independent random number generation sequences per rank, rather than algorithmic variance.
+## Experimental Results & Analysis
 
----
+The program was tested with $$x = \pi/2$$, making the exact solution $$u(\pi/2) = 1 - \cos(\pi/2) = 1$$. Experiments were run for sample sizes $$N \in \{10^4, 10^5, 10^6, 10^7\}$$ and process counts $$P \in \{1, 2, 4, 8\}$$.
 
-### 2. Execution Time & Runtime Scaling ⏱️
+### 1. Numerical Accuracy (Monte Carlo Convergence)
 
-* **Analysis:** For computationally intensive workloads ($N = 10^7$), parallel execution provides substantial time savings—dropping total runtime monotonically from single-process baseline down across 8 processes.
-* **Low Workload Threshold:** For small sample sizes ($N \le 10^5$), the execution time flattens out rapidly because the overhead of initializing MPI and sending messages outweighs the compute time.
+<div align="center">
+  <img src="figures/accuracy.png" alt="Accuracy of Monte Carlo approximation" width="80%">
+  <br>
+  <em>Figure 1: Absolute error of the Monte Carlo approximation vs. Total samples.</em>
+</div>
 
----
+**Analysis:** 
+According to Figure 1, the absolute error decreases as the total number of Monte Carlo samples increases from $$10^4$$ to $$10^7$$. This behavior is consistent with the theory of the Monte Carlo method, where the error of the mean estimate decreases with increasing sample size. The error roughly drops by an order of magnitude per decade increase in $$N$$ (theoretical rate of $$\mathcal{O}(N^{-1/2})$$). However, the decreasing trend is not perfectly uniform due to the stochastic nature of sampling. A specific execution with fewer samples might occasionally yield a smaller error than another execution with more samples due to randomness.
 
-### 3. Speedup Analysis $S(N,P)$ 📈
+### 2. Execution Time (Runtime Scaling)
 
-* **Analysis:** Speedup performance improves significantly as the workload per worker increases. At $N = 10^7$, the implementation achieves strong scalability.
-* **Cache Locality Influence:** Superlinear scaling behavior observed at high process counts stems from reduced working set sizes per rank, allowing local arrays and RNG states to fit entirely within the fast L1/L2 data caches.
+<div align="center">
+  <img src="figures/runtime.png" alt="Runtime for N=10000000" width="80%">
+  <br>
+  <em>Figure 2: Execution time for N=10^7 versus number of MPI processes.</em>
+</div>
 
----
+**Analysis:**
+Figure 2 demonstrates that for the largest sample size ($$N = 10^7$$), the execution time decreases significantly as the number of processes increases (from ~0.45 seconds for $$P=1$$ to ~0.05 seconds for $$P=8$$). This result is logical because the dominant portion of the runtime is spent calculating $$\sin(t)$$ values. By adding more processes, the local workload per Worker decreases, and computations are effectively divided, leading to a lower total time. For smaller problem sizes, this reduction is expected to be less noticeable because the overhead of MPI communication and process management outweighs the computation time.
 
-### 4. Parallel Efficiency $E(N,P)$ ⚡
+### 3. Speedup Analysis
 
-* **Analysis:** Efficiency measures core resource utilization ($E = S/P$). For large sample sizes ($N = 10^7$), efficiency remains near or above **100%**, proving high hardware capability utilization.
-* **Communication Latency Impact:** For small sample counts ($N = 10^4$), efficiency drops drastically due to communication overhead and Master-Worker synchronization latency dominating the minimal worker compute load.
+<div align="center">
+  <img src="figures/speedup.png" alt="Speedup" width="80%">
+  <br>
+  <em>Figure 3: Speedup vs. Number of MPI processes for different sample sizes.</em>
+</div>
 
----
+**Analysis:**
+In Figure 3, it is observed that for small sample sizes ($$10^4$$ and $$10^5$$), the speedup does not improve well with increasing processes; it remains approximately 1 or even slightly drops. This occurs because the total computation for $$N=10^4$$ is very small, and the time spent on MPI message passing, synchronization, and Master management forms a significant portion of the total runtime.
 
-## 📜 License
+In contrast, for larger sample sizes ($$10^6$$ and $$10^7$$), significant speedup is achieved because the computation-to-communication ratio increases. Notably, for $$N=10^7$$ and $$P=8$$, the speedup value exceeds 8 (superlinear speedup). This behavior is attributed to cache effects, differences in execution paths between serial and parallel modes, or system scheduling fluctuations, and should not be interpreted as an absolute indication of ideal scaling without multiple trial runs.
+
+### 4. Parallel Efficiency
+
+<div align="center">
+  <img src="figures/efficiency.png" alt="Efficiency" width="80%">
+  <br>
+  <em>Figure 4: Parallel Efficiency vs. Number of MPI processes.</em>
+</div>
+
+**Analysis:**
+Figure 4 shows that for small sample sizes, efficiency drops as the number of processes increases (reaching as low as 10% for $$N=10^4$$ and $$P=8$$). This is expected because the cost of communication and synchronization is high relative to the small computational load. Processes spend significant time sending/receiving messages or waiting for other processes.
+
+For larger sample sizes, efficiency improves significantly, indicating that the program utilizes parallel processes more effectively for larger problems. In the case of $$N=10^7$$, efficiency is measured at over 100%. Theoretically, ideal efficiency is 1 (100%). As explained in the speedup section, values greater than 1 can result from superlinear speedup factors such as cache effects or timing fluctuations.
+
+## Communication Overhead and Scalability
+
+In this implementation, communication is relatively simple. The Master sends 2 messages to each Worker (one for $$x$$, one for control data) and receives 1 message back (result and local time). Therefore, the total number of messages is $$3W$$. This is of order $$O(P)$$, and the data volume is very small. Consequently, for large sample sizes, the computational cost of the Monte Carlo loop dominates the communication cost.
+
+However, for very small sample counts, even this minimal communication becomes significant compared to the compute time. This demonstrates a critical lesson in parallel computing: parallelization is not beneficial for all problem sizes, and the computation-to-communication ratio must be sufficiently large to justify distributed execution.
+
+## License
 
 Distributed under the MIT License. See `LICENSE` for details.
-
-```
-
-```
