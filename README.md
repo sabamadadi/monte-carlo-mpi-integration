@@ -30,11 +30,11 @@ $$\hat{u}(x) = x \cdot \frac{1}{N} \sum_{i=1}^{N} \sin(x \cdot R_i)$$
 
 ```text
 .
-├── mc_integral_mpi.c       # C source code with MPI routines
-├── plot_results.py         # Python script to calculate metrics & generate plots
-├── results.csv             # Raw benchmark data
-├── results_with_metrics.csv# Calculated speedup & efficiency metrics
-├── figures/                # Benchmark plots displayed in README
+├── mc_integral_mpi.c         # C source code with MPI routines
+├── plot_results.py           # Python script to calculate metrics & generate plots
+├── results.csv               # Raw benchmark data
+├── results_with_metrics.csv  # Calculated speedup & efficiency metrics
+├── figures/                  # Benchmark plots displayed in README
 │   ├── accuracy.png
 │   ├── runtime.png
 │   ├── speedup.png
